@@ -1,0 +1,71 @@
+# Ignore virtual environment directories
+venv/
+env/
+.venv/
+.pyvenv/
+__pycache__/
+*.py[cod]
+*.py[cod].*
+*$py.class
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints
+
+# Ignore macOS specific files
+.DS_Store
+
+# Ignore mypy cache
+.mypy_cache/
+
+# Ignore pylint reports
+pylint-report.txt
+
+# Ignore coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+
+# Ignore PyInstaller files
+# Usually these files are written by a python script from a template
+# before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
+
+# Ignore Jupyter Notebook metadata
+*.ipynb
+
+# Ignore local and remote virtual environments
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Ignore Spyder project settingsd
+.spyderproject
+.spyproject
+
+# Ignore Rope project settings
+.ropeproject
+
+# Ignore Pycharm project settings
+.idea/
+
+# Ignore VSCode project settings
+.vscode/
+
+# Ignore coverage reports
+htmlcov/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
