@@ -77,13 +77,13 @@ def main():
         summary = summarizing.summarize_forecast(afd_text)
 
         # Create the message with the summary and the URL
-        message = f"{summary}\n\nRead the full AFD here: {afd_url}"
+        message = f"{summary}\n\nRead the full AFD here: https://forecast.weather.gov/product.php?site=MPX&issuedby=MPX&product=AFD&format=ci&version=1&glossary=1"
 
         # Debugging: Print values
         print(f"TELEGRAM_TOKEN: {TELEGRAM_TOKEN}")
         print(f"TELEGRAM_CHANNEL_ID: {TELEGRAM_CHANNEL_ID}")
         print(f"Summary: {summary}")
-        print(f"AFD URL: {afd_url}")
+        print(f"AFD URL: https://forecast.weather.gov/product.php?site=MPX&issuedby=MPX&product=AFD&format=ci&version=1&glossary=1")
 
         # Send the summary and URL to Telegram
         try:
