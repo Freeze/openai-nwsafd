@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 
 import os
-import time
 import requests
+import time
+import argparse
 from openai import OpenAI
 from bs4 import BeautifulSoup
 
@@ -11,60 +12,46 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_KEY")
 TELEGRAM_CHANNEL_ID = os.getenv("TELEGRAM_CHANNEL_ID")
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
-# Global Variables
-AFD_URL = "https://api.weather.gov/products/types/afd/locations/mpx"
-SPC_BASE_URL = "https://www.spc.noaa.gov/products/outlook/"
-DAY1_URL = f"{SPC_BASE_URL}day1otlk.html"
-DAY2_URL = f"{SPC_BASE_URL}day2otlk.html"
-DAY3_URL = f"{SPC_BASE_URL}day3otlk.html"
-DAYS4_TO_8_URL = f"{SPC_BASE_URL}day3otlk.html"
+# URLs for SPC Outlooks
+URLS = {
+    "day1": "https://www.spc.noaa.gov/products/outlook/day1otlk.html",
+    "day2": "https://www.spc.noaa.gov/products/outlook/day2otlk.html",
+    "day3": "https://www.spc.noaa.gov/products/outlook/day3otlk.html",
+    "day4-8": "https://www.spc.noaa.gov/products/exper/day4-8/",
+}
 
-def fetch_latest_afd(use_local=False):
+
+def fetch_latest_afd():
     """Fetches the latest Area Forecast Discussion for Minnesota."""
-    if use_local and os.path.exists("latest_afd.json"):
-        with open("latest_afd.json", "r") as file:
-            return file.read()
-    else:
-        headers = {"User-Agent": "Python"}
-        response = requests.get(AFD_URL, headers=headers, timeout=10)
-        response.raise_for_status()
-        latest_afd_id = response.json()["@graph"][0]["@id"]
-        afd_txt = requests.get(latest_afd_id, headers=headers, timeout=10)
-        afd_txt.raise_for_status()
-        afd_json = afd_txt.json()
-        afd_text = afd_json["productText"]
+    url = "https://api.weather.gov/products/types/afd/locations/mpx"
+    headers = {"User-Agent": "Python"}
+    response = requests.get(url, headers=headers, timeout=10)
+    response.raise_for_status()  # Ensure we notice bad responses
+    latest_afd = response.json()["@graph"][0]["@id"]
+    afd_txt = requests.get(latest_afd, headers=headers, timeout=10)
+    afd_txt.raise_for_status()  # Ensure we notice bad responses
+    afd_json = afd_txt.json()
+    return afd_json["productText"]
 
-        # Save the response locally
-        with open("latest_afd.json", "w") as file:
-            file.write(afd_text)
-        return afd_text
 
-def fetch_spc_outlook(day, use_local=False):
-    """Fetches the SPC Outlook text from the SPC website."""
-    urls = {
-        1: DAY1_URL,
-        2: DAY2_URL,
-        3: DAY3_URL,
-        4: DAYS4_TO_8_URL
-    }
-    url = urls.get(day)
-    
-    if use_local and os.path.exists(f"day{day}_spc_outlook.html"):
-        with open(f"day{day}_spc_outlook.html", "r") as file:
-            return file.read()
-    else:
-        headers = {"User-Agent": "Mozilla/5.0"}
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        soup = BeautifulSoup(response.content, "html.parser")
-        outlook_text = "\n".join(pre.get_text() for pre in soup.find_all("pre"))
-        
-        # Save the response locally
-        with open(f"day{day}_spc_outlook.html", "w") as file:
-            file.write(outlook_text)
-        return outlook_text
+def fetch_spc_outlook(day):
+    """Fetches the SPC Outlook text for a given day from the SPC website."""
+    url = URLS[day]
+    headers = {"User-Agent": "Mozilla/5.0"}
+    response = requests.get(url, headers=headers, timeout=10)
+    response.raise_for_status()  # Ensure we notice bad responses
 
-def summarize_forecast(forecast_text, spc_text):
+    soup = BeautifulSoup(response.content, "html.parser")
+
+    # Find the main text content of the SPC Outlook
+    outlook_text = ""
+    for pre in soup.find_all("pre"):
+        outlook_text += pre.get_text()
+
+    return outlook_text
+
+
+def summarize_forecast(forecast_text, spc_texts):
     """Uses OpenAI to summarize the forecast with Markdown formatting."""
     system_content = (
         "You are a weather expert. Your job is to advise a storm chaser on "
@@ -73,10 +60,10 @@ def summarize_forecast(forecast_text, spc_text):
     )
 
     user_content = (
-        f"SPC Day One Outlook:\n{spc_text[1]}\n"
-        f"SPC Day Two Outlook:\n{spc_text[2]}\n"
-        f"SPC Day Three Outlook:\n{spc_text[3]}\n"
-        f"SPC Days Four to Eight Outlook:\n{spc_text[4]}\n"
+        f"SPC Day One Outlook:\n{spc_texts.get('day1', 'Not available')}\n\n"
+        f"SPC Day Two Outlook:\n{spc_texts.get('day2', 'Not available')}\n\n"
+        f"SPC Day Three Outlook:\n{spc_texts.get('day3', 'Not available')}\n\n"
+        f"SPC Day Four to Eight Outlook:\n{spc_texts.get('day4-8', 'Not available')}\n\n"
         f"Forecast from the local MPX office:\n{forecast_text}\n"
         "Summarize the following forecast into the next three days. After that "
         "summary, I would like a summary of the rest of the AFD so I know how "
@@ -87,11 +74,10 @@ def summarize_forecast(forecast_text, spc_text):
         "from the AFD. Make sure to include what time the AFD was issued at. If "
         "the current date looks like there is tornado potential, go into depth "
         "about that forecast.\n\n"
-        "We are also going to analyze the SPC Day 1 severe outlook. If it does not "
-        "mention South Dakota, Minnesota, North Dakota, Iowa, or Wisconsin, we are "
-        "not interested in it. If it is mentioned, please use that information as "
-        "well as the AFD in your summary. At the end tell me which days you would "
-        "choose to storm chase as if you were a storm chaser."
+        "We are also going to analyze the SPC Day 1, Day 2, Day 3, and Day 4-8 severe outlooks. "
+        "If they do not mention South Dakota, Minnesota, North Dakota, Iowa, or Wisconsin, we are "
+        "not interested in them. If they are mentioned, please use that information as well as the AFD "
+        "in your summary. At the end, tell me which days you would choose to storm chase as if you were a storm chaser."
     )
 
     completion = client.chat.completions.create(
@@ -103,38 +89,74 @@ def summarize_forecast(forecast_text, spc_text):
         max_tokens=1000,
         temperature=0.5,
     )
-    summary = completion.choices[0].message['content']
+    summary = completion.choices[0].message.content
 
     # Add Markdown formatting to days of the week
-    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    for day in days:
-        summary = summary.replace(f"{day}:", f"*{day}:*")
+    summary = summary.replace("Monday:", "*Monday:*")
+    summary = summary.replace("Tuesday:", "*Tuesday:*")
+    summary = summary.replace("Wednesday:", "*Wednesday:*")
+    summary = summary.replace("Thursday:", "*Thursday:*")
+    summary = summary.replace("Friday:", "*Friday:*")
+    summary = summary.replace("Saturday:", "*Saturday:*")
+    summary = summary.replace("Sunday:", "*Sunday:*")
 
     return summary
+
 
 def send_telegram_message(token, channel_id, message):
     """Sends a message to a Telegram channel."""
     url = f"https://api.telegram.org/bot{token}/sendMessage"
     payload = {"chat_id": channel_id, "text": message, "parse_mode": "Markdown"}
     response = requests.post(url, json=payload)
-    response.raise_for_status()
+    response.raise_for_status()  # Ensure we notice bad responses
     return response
 
-def main(use_local_files=False):
-    forecast_text = fetch_latest_afd(use_local=use_local_files)
-    spc_text = [fetch_spc_outlook(day, use_local=use_local_files) for day in range(1, 5)]
-    
-    # Adding a delay between requests
-    time.sleep(5)
-    
-    summary = summarize_forecast(forecast_text, spc_text)
-    response = send_telegram_message(TELEGRAM_TOKEN, TELEGrah CHANNEL_ID, summary)
+
+def save_to_file(filename, content):
+    """Saves the given content to a file."""
+    with open(filename, "w") as file:
+        file.write(content)
+
+
+def load_from_file(filename):
+    """Loads content from a file."""
+    with open(filename, "r") as file:
+        return file.read()
+
+
+def main(use_local_files):
+    if use_local_files:
+        forecast_text = load_from_file("afd.txt")
+        spc_texts = {
+            "day1": load_from_file("spc_day1.txt"),
+            "day2": load_from_file("spc_day2.txt"),
+            "day3": load_from_file("spc_day3.txt"),
+            "day4-8": load_from_file("spc_day4-8.txt"),
+        }
+    else:
+        forecast_text = fetch_latest_afd()
+        save_to_file("afd.txt", forecast_text)
+
+        spc_texts = {}
+        for day in URLS.keys():
+            spc_texts[day] = fetch_spc_outlook(day)
+            save_to_file(f"spc_{day}.txt", spc_texts[day])
+            time.sleep(5)  # Pause for 5 seconds between each request
+
+    summary = summarize_forecast(forecast_text, spc_texts)
+    response = send_telegram_message(TELEGRAM_TOKEN, TELEGRAM_CHANNEL_ID, summary)
     print(f"Message sent to Telegram channel: {response.status_code}")
 
+
 if __name__ == "__main__":
-    import argparse
-    parser = argparse.ArgumentParser(description="Fetch and summarize weather forecasts.")
-    parser.add_argument("--local", action="store_true", help="Use local files instead of fetching from the web")
+    parser = argparse.ArgumentParser(
+        description="Fetch and summarize weather forecasts."
+    )
+    parser.add_argument(
+        "--local",
+        action="store_true",
+        help="Read data from local files instead of fetching from the web",
+    )
     args = parser.parse_args()
-    
+
     main(use_local_files=args.local)
